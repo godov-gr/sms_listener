@@ -14,30 +14,46 @@ import java.net.URL;
 
 public class SmsReceiver extends BroadcastReceiver {
 
+    private static final String TAG = "SmsReceiver";
+
     @Override
     public void onReceive(Context context, Intent intent) {
+        Log.d(TAG, "onReceive called");
         Object[] pdus = (Object[]) intent.getExtras().get("pdus");
         if (pdus != null) {
             for (Object pdu : pdus) {
                 SmsMessage smsMessage = SmsMessage.createFromPdu((byte[]) pdu);
                 String messageBody = smsMessage.getMessageBody();
+                Log.d(TAG, "SMS received: " + messageBody);
 
                 SharedPreferences sharedPreferences = context.getSharedPreferences("AppPrefs", Context.MODE_PRIVATE);
                 String serverUrl = sharedPreferences.getString("serverUrl", "");
+                Log.d(TAG, "Server URL: " + serverUrl);
 
                 if (!serverUrl.isEmpty()) {
-                    new SendPostRequest().execute(serverUrl, messageBody);
+                    new SendPostRequest(context).execute(serverUrl, messageBody);
+                } else {
+                    Log.d(TAG, "Server URL is empty");
                 }
             }
+        } else {
+            Log.d(TAG, "pdus is null");
         }
     }
 
-    private static class SendPostRequest extends AsyncTask<String, Void, Void> {
+    private static class SendPostRequest extends AsyncTask<String, Void, String> {
+
+        private Context context;
+
+        public SendPostRequest(Context context) {
+            this.context = context;
+        }
 
         @Override
-        protected Void doInBackground(String... params) {
+        protected String doInBackground(String... params) {
             String serverUrl = params[0];
             String messageBody = params[1];
+            Log.d(TAG, "Sending POST request to: " + serverUrl);
             try {
                 URL url = new URL(serverUrl);
                 HttpURLConnection conn = (HttpURLConnection) url.openConnection();
@@ -52,13 +68,27 @@ public class SmsReceiver extends BroadcastReceiver {
                 os.close();
 
                 int responseCode = conn.getResponseCode();
-                Log.d("SmsReceiver", "POST Response Code :: " + responseCode);
+                Log.d(TAG, "Response Code: " + responseCode);
 
-                conn.disconnect();
+                if (responseCode == 200) {
+                    return "Request successful";
+                } else {
+                    return "Request failed with code: " + responseCode;
+                }
+
             } catch (Exception e) {
-                e.printStackTrace();
+                Log.e(TAG, "Error: " + e.getMessage(), e);
+                return "Error: " + e.getMessage();
             }
-            return null;
+        }
+
+        @Override
+        protected void onPostExecute(String result) {
+            super.onPostExecute(result);
+            if (context instanceof MainActivity) {
+                ((MainActivity) context).updateStatus(result);
+            }
+            Log.d(TAG, "Request result: " + result);
         }
     }
 }
